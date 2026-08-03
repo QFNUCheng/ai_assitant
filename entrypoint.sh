@@ -1,0 +1,48 @@
+#!/bin/bash
+set -e
+
+echo "💕 ================================"
+echo "    AI 女友后端服务启动中..."
+echo "================================"
+
+# 等待 MySQL 就绪
+echo "⏳ 等待 MySQL 数据库就绪..."
+until python -c "
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+import os
+
+async def check():
+    engine = create_async_engine(
+        f\"mysql+asyncmy://{os.getenv('DB_USER','root')}:{os.getenv('DB_PASSWORD','123456')}@{os.getenv('DB_HOST','mysql')}:{os.getenv('DB_PORT','3306')}/{os.getenv('DB_NAME','world')}?charset=utf8mb4\",
+        echo=False
+    )
+    try:
+        async with engine.connect() as conn:
+            print('✅ MySQL 连接成功')
+        await engine.dispose()
+    except Exception as e:
+        print(f'⏳ 等待中... {e}')
+        raise
+
+asyncio.run(check())
+" 2>/dev/null; do
+    echo "⏳ MySQL 尚未就绪，3 秒后重试..."
+    sleep 3
+done
+
+# 初始化向量数据库（如果不存在）
+if [ ! -f "/app/vectorstore/chroma_db/chroma.sqlite3" ]; then
+    echo "📚 首次启动，正在构建知识库向量..."
+    python -c "
+from vectorstore.store import create_vector_db
+print('正在从知识库构建向量...')
+create_vector_db()
+print('✅ 向量库构建完成')
+"
+else
+    echo "✅ 向量库已存在，跳过构建"
+fi
+
+echo "🚀 启动 FastAPI 服务..."
+exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
