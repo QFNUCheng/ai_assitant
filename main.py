@@ -1,12 +1,24 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db import engine, get_db
-from models.chatmessage import Base, ChatSession, ChatMessage
-from service.memory import save_message
+from models.chatmessage import Base
+from service.memory import (
+    create_chat_session,
+    delete_chat_session,
+    get_chat_messages,
+    list_chat_sessions,
+    save_message,
+)
 
 app = FastAPI()
+
+
+class ChatRequest(BaseModel):
+    session_id: int = Field(gt=0)
+    message: str = Field(min_length=1, max_length=5000)
 
 # ============ CORS 跨域配置 ============
 app.add_middleware(
@@ -22,7 +34,34 @@ app.add_middleware(
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+@app.get("/sessions")
+async def sessions(db: AsyncSession = Depends(get_db)):
+    return {"sessions": await list_chat_sessions(db)}
+
+
+@app.post("/sessions")
+async def create_session(db: AsyncSession = Depends(get_db)):
+    session = await create_chat_session(db)
+    return {"id": session.session_id, "title": "新的对话", "preview": "从这里开始记录你的想法", "message_count": 0}
+
+
+@app.get("/sessions/{session_id}/messages")
+async def session_messages(session_id: int, db: AsyncSession = Depends(get_db)):
+    return {"messages": await get_chat_messages(db, session_id)}
+
+
+@app.delete("/sessions/{session_id}")
+async def remove_session(session_id: int, db: AsyncSession = Depends(get_db)):
+    if not await delete_chat_session(db, session_id):
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"ok": True}
+
+
 @app.post("/chat")
-async def chat(session_id:int,message:str,db:AsyncSession = Depends(get_db)):
-    res = await save_message(db,message,session_id)
-    return res
+async def chat(payload: ChatRequest, db: AsyncSession = Depends(get_db)):
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="消息不能为空")
+    return await save_message(db, message, payload.session_id)

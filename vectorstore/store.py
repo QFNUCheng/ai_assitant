@@ -1,8 +1,6 @@
 import os
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import TextLoader
 from langchain_community.embeddings import DashScopeEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ============ Embedding 配置（支持环境变量） ============
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
@@ -15,17 +13,26 @@ embedding_model = DashScopeEmbeddings(
     model=EMBEDDING_MODEL,
     dashscope_api_key=DASHSCOPE_API_KEY,
 )
+# 向量切片
+
 def create_vector_db():
+    # These optional indexing dependencies pull in the local ML stack. Keep
+    # them out of the API startup path; normal chat only opens the saved DB.
+    from langchain_community.document_loaders import TextLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    # 文档加载
     loader = TextLoader(
         "./knowlege/learn.txt",
         encoding="utf-8"
     )
     document = loader.load()
+    # 切片定义
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50
     )
-    # 切片完成的
+    # 切片完成
+    # 切片向量持久化
     split_docs = splitter.split_documents(document)
     db = Chroma.from_documents(
         split_docs,

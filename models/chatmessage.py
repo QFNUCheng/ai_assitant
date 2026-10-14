@@ -13,11 +13,9 @@ class ChatSession(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     message_count: Mapped[int] = mapped_column(Integer, default=0)
 
-
 class ChatMessage(Base):
     __tablename__ = "chatmessage"
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
-
