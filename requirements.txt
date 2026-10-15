@@ -1,13 +1,21 @@
 fastapi
 uvicorn
-sqlalchemy
+# 用 sqlalchemy[asyncio]：异步引擎还需要 greenlet，
+# 光写 sqlalchemy 会在 create_async_engine 时抛
+# "The SQLAlchemy asyncio module requires that the Python 'greenlet' library is installed"
+sqlalchemy[asyncio]
 asyncmy
 langchain
 langgraph
 langchain-openai
 langchain-community
-langchain_chroma
+# 1.x 起 from_documents 不再接受 batch_size；本项目改为显式分批写入，故要求 1.x
+langchain-chroma>=1.0
+# corpus.py 用到递归切分器（langchain 1.x 把它拆成了独立包）
+langchain-text-splitters
 chromadb
 dashscope
 python-dotenv
-sentence-transformers
+# 注：原 requirements 里的 sentence-transformers 未被任何代码引用，
+# 但会拉入 torch（约 2–3GB），在磁盘紧张的服务器上会导致构建失败，故移除。
+# 若将来需要本地 embedding 模型，再按需加回。

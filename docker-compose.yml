@@ -1,0 +1,32 @@
+name: she-love-me
+
+# 部署形态遵循本机既有惯例（同 love.hunao.xin / blog.hunao.xin 等站点）：
+#   容器只监听 127.0.0.1:18120，不直接对公网暴露；
+#   HTTPS 与证书由宝塔 nginx 负责（见 deploy/nginx/ai.hunao.xin.conf）。
+#
+# 注意：本机 80/443 已被宝塔 nginx 占用，因此这里**不使用** Caddy。
+# 本机也不由本 compose 提供 MySQL，数据库用宝塔已有的 MySQL（见 .env 的 DB_HOST）。
+
+services:
+  app:
+    build: .
+    image: she_love_me:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    # 只绑回环，公网流量一律经宝塔 nginx 进来
+    ports:
+      - "127.0.0.1:18120:8000"
+    # 首次启动要构建知识库向量库（会调用 embedding，全五部约 30 万 token，可能数分钟）
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 900s
+    volumes:
+      # 向量库落盘到宿主机，容器重建后不必重新 embedding
+      - ./data/vectorstore:/app/vectorstore/chroma_db
+    extra_hosts:
+      # 让容器内能用 DB_HOST=host.docker.internal 连宿主机上的宝塔 MySQL
+      - "host.docker.internal:host-gateway"

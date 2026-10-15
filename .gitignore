@@ -1,0 +1,22 @@
+# IDE
+.idea/
+.vscode/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 环境变量与密钥（绝不提交）
+.env
+.env.*
+!.env.example
+*.local
+
+# 日志
+*.log
+
+# 向量库：由容器按语料指纹重建，不入库
+vectorstore/chroma_db/

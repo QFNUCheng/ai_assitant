@@ -1,11 +1,17 @@
 import os
+
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+# 读取项目根目录的 .env（Docker 下由 env_file 注入，这里对本地运行生效）
+load_dotenv()
 
 # ============ 数据库配置（支持环境变量，兼容 Docker / 宝塔） ============
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "123456")
+# 密码不设默认值：避免把弱口令写死在代码里（可参考 .env.example 配置）
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "world")
 
 DATABASE_URL = f"mysql+asyncmy://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"

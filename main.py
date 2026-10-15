@@ -36,6 +36,12 @@ async def startup():
         await conn.run_sync(Base.metadata.create_all)
 
 
+@app.get("/health")
+async def health():
+    """存活探针：供容器健康检查使用，不触碰数据库。"""
+    return {"status": "ok"}
+
+
 @app.get("/sessions")
 async def sessions(db: AsyncSession = Depends(get_db)):
     return {"sessions": await list_chat_sessions(db)}
