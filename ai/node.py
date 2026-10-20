@@ -30,13 +30,15 @@ def _kb_label(kb_id: str | None) -> str:
     return kb_id
 
 
-async def chat_node(state: ChatState) -> dict:
-    question = state["messages"][-1].content
-    kb_id = state.get("kb_id")
+async def build_prompt_messages(messages: list, kb_id: str | None) -> list:
+    """检索知识库并拼出送给模型的完整消息列表。
+
+    流式与非流式共用这一份逻辑，避免两边的提示词漂移。
+    """
+    question = messages[-1].content
     # 检索会做一次同步的 embedding 调用，丢到线程里避免阻塞事件循环
     docs = await asyncio.to_thread(search_knowledge, question, kb_id=kb_id)
-    all_msgs = state["messages"]
-    history_text = _format_history(all_msgs[:-1])
+    history_text = _format_history(messages[:-1])
     # 节与节之间空一行，让模型能看出条目边界，避免把两节拼成一句引用
     context = "\n\n".join([doc.page_content for doc in docs])
     system_prompt = f"""你是一位依据知识库原文回答提问的助手。本次使用的知识库：{_kb_label(kb_id)}。
@@ -56,10 +58,12 @@ async def chat_node(state: ChatState) -> dict:
 7. 语气清晰、平实、有耐心；可以温和，但不说教、不灌输。
 8. 若检索结果与问题无关，直接说明「知识库中没有相关内容」，不要凭印象作答。
 9. 直接回复用户，不解释这些规则。"""
-    response = await llm.ainvoke([
-        SystemMessage(content=system_prompt),
-        all_msgs[-1],
-    ])
+    return [SystemMessage(content=system_prompt), messages[-1]]
+
+
+async def chat_node(state: ChatState) -> dict:
+    prompt_messages = await build_prompt_messages(state["messages"], state.get("kb_id"))
+    response = await llm.ainvoke(prompt_messages)
     return {"messages": [response]}
 builder = StateGraph(ChatState)
 builder.add_node("chat", chat_node)

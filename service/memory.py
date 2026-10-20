@@ -3,7 +3,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai.llm import llm
-from ai.node import graph
+from ai.node import build_prompt_messages, graph
 from models.chatmessage import ChatMessage, ChatSession
 
 # ============ 压缩配置 ============
@@ -78,29 +78,49 @@ async def get_history_message(db: AsyncSession, session_id: int) -> list:
     return history
 async def save_message(db: AsyncSession, message: str, session_id: int, kb_id: str | None = None):
     """保存消息并返回 AI 回复，同时触发摘要压缩"""
-    # 1. 确保 session 存在
+    reply = await save_message_record(db, message, session_id)
+    prompt_messages = await build_prompt_messages(reply["history"], kb_id)
+    response = await llm.ainvoke(prompt_messages)
+    return await finish_message(db, reply, response.content, kb_id=kb_id)
+
+
+async def save_message_record(db: AsyncSession, message: str, session_id: int) -> dict:
+    """写入用户消息并返回后续生成所需的上下文。
+
+    与 ``finish_message`` 配对使用：调用方拿到 ``history`` 后自行产出回复
+    （可流式），最后把完整文本交回 ``finish_message`` 落库。
+    """
     session = await _get_or_create_session(db, session_id)
 
-    # 2. 保存用户消息
     user_message = ChatMessage(session_id=session_id, role="user", content=message)
     db.add(user_message)
     await db.flush()
 
     session.message_count += 1
 
-    # 3. 获取压缩后的历史（摘要 + 窗口消息）
     history = await get_history_message(db, session_id)
+    return {
+        "session": session,
+        "user_message_id": user_message.id,
+        "history": history,
+    }
 
-    # 4. 调用 LangGraph 生成回复（kb_id 决定检索哪个知识库）
-    new_message = await graph.ainvoke({"messages": history, "kb_id": kb_id})
-    result = new_message["messages"][-1].content
 
-    # 5. 保存 AI 回复
-    ai_message = ChatMessage(session_id=session_id, role="ai", content=result)
+async def finish_message(
+    db: AsyncSession,
+    reply: dict,
+    content: str,
+    kb_id: str | None = None,
+) -> dict:
+    """保存 AI 回复并（必要时）触发摘要压缩。流式与非流式共用。"""
+    session: ChatSession = reply["session"]
+    session_id = session.session_id
+
+    ai_message = ChatMessage(session_id=session_id, role="ai", content=content)
     db.add(ai_message)
     session.message_count += 1
 
-    # 6. 检查是否需要触发摘要压缩
+    # 检查是否需要触发摘要压缩
     if session.message_count > SUMMARY_TRIGGER_COUNT and (
         not session.summary or session.message_count % 10 == 0
     ):
@@ -120,8 +140,8 @@ async def save_message(db: AsyncSession, message: str, session_id: int, kb_id: s
 
     await db.commit()
     return {
-        "answer": result,
-        "user_message_id": user_message.id,
+        "answer": content,
+        "user_message_id": reply["user_message_id"],
         "ai_message_id": ai_message.id,
     }
 

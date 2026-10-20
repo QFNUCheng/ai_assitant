@@ -61,6 +61,12 @@
   .drop { border: 1px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
   .drop.over { border-color: var(--accent); color: var(--accent); }
   pre.raw { background: var(--panel2); padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+  /* 流式输出时的光标 */
+  .caret {
+    display: inline-block; width: 8px; height: 1em; margin-left: 2px;
+    background: var(--accent); vertical-align: text-bottom; animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
 </style>
 </head>
 <body>

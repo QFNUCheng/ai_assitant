@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -6,15 +7,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ai.node import build_prompt_messages
+from ai.llm import llm
 from api.kb_routes import router as kb_router
 from database.db import engine, get_db
 from models.chatmessage import Base
 from service.memory import (
     create_chat_session,
     delete_chat_session,
+    finish_message,
     get_chat_messages,
     list_chat_sessions,
     save_message,
+    save_message_record,
 )
 from vectorstore import kb as kb_store
 from vectorstore import store
@@ -77,12 +82,7 @@ async def remove_session(session_id: int, db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
-@app.post("/chat")
-async def chat(payload: ChatRequest, db: AsyncSession = Depends(get_db)):
-    message = payload.message.strip()
-    if not message:
-        raise HTTPException(status_code=422, detail="消息不能为空")
-
+def _validate_kb(payload: ChatRequest) -> str | None:
     kb_id = (payload.kb_id or "").strip() or None
     if kb_id and kb_id not in store.SEARCH_ALL:
         try:
@@ -91,8 +91,69 @@ async def chat(payload: ChatRequest, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not kb_store.kb_exists(kb_id):
             raise HTTPException(status_code=404, detail=f"知识库 {kb_id} 不存在")
+    return kb_id
 
+
+@app.post("/chat")
+async def chat(payload: ChatRequest, db: AsyncSession = Depends(get_db)):
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="消息不能为空")
+    kb_id = _validate_kb(payload)
     return await save_message(db, message, payload.session_id, kb_id=kb_id)
+
+
+@app.post("/chat/stream")
+async def chat_stream(payload: ChatRequest, db: AsyncSession = Depends(get_db)):
+    """流式对话：先回 text/event-stream，逐块推送，结束后落库。
+
+    事件格式（SSE）：
+      data: {"type":"delta","text":"..."}     增量文本
+      data: {"type":"done","ai_message_id":N} 结束
+      data: {"type":"error","detail":"..."}   出错
+    """
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="消息不能为空")
+    kb_id = _validate_kb(payload)
+
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    async def event_stream():
+        record = None
+        collected: list[str] = []
+        try:
+            record = await save_message_record(db, message, payload.session_id)
+            prompt_messages = await build_prompt_messages(record["history"], kb_id)
+            async for chunk in llm.astream(prompt_messages):
+                text = chunk.content or ""
+                if text:
+                    collected.append(text)
+                    yield f"data: {json.dumps({'type': 'delta', 'text': text}, ensure_ascii=False)}\n\n"
+            saved = await finish_message(db, record, "".join(collected), kb_id=kb_id)
+            yield f"data: {json.dumps({'type': 'done', 'ai_message_id': saved['ai_message_id']}, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            # 客户端断开：已生成的部分仍然落库，避免对话记录缺一条
+            if record is not None and collected:
+                try:
+                    await finish_message(db, record, "".join(collected), kb_id=kb_id)
+                except Exception:
+                    await db.rollback()
+            raise
+        except Exception as exc:  # noqa: BLE001
+            await db.rollback()
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)[:300]}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # 关掉 nginx 缓冲，否则会攒够再发
+        },
+    )
 
 
 # ============ 前端静态页（Vue 3，无构建步骤） ============

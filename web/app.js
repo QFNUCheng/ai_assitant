@@ -202,19 +202,72 @@ createApp({
       if (!sessionId.value) return;
       busy.value = true;
       messages.value.push({ role: "user", content: text });
+      // 先放一个空的助手消息，后面按流式内容逐步填充
+      const aiMsg = reactive({ role: "ai", content: "" });
+      messages.value.push(aiMsg);
       question.value = "";
       scrollDown();
+
+      const payload = { session_id: sessionId.value, message: text };
+      if (activeKb.value) payload.kb_id = activeKb.value;
+
       try {
-        const payload = { session_id: sessionId.value, message: text };
-        if (activeKb.value) payload.kb_id = activeKb.value;
-        const d = await api("/chat", { method: "POST", body: payload });
-        messages.value.push({ role: "ai", content: d.answer });
+        await streamChat(payload, (delta) => {
+          aiMsg.content += delta;
+          scrollDown();
+        });
+        if (!aiMsg.content) aiMsg.content = "（没有收到内容）";
       } catch (e) {
-        messages.value.push({ role: "ai", content: "（出错：" + e.message + "）" });
+        // 流式失败时退回到普通接口，保证有回答
+        try {
+          const d = await api("/chat", { method: "POST", body: payload });
+          aiMsg.content = d.answer;
+        } catch (e2) {
+          aiMsg.content = "（出错：" + e2.message + "）";
+        }
       } finally {
         busy.value = false;
         scrollDown();
         loadSessions();
+      }
+    }
+
+    /* 读取 SSE 流。用 fetch + ReadableStream，因为 EventSource 不支持 POST。 */
+    async function streamChat(payload, onDelta) {
+      const res = await fetch(API + "/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok || !res.body) {
+        let detail = `HTTP ${res.status}`;
+        try { detail = (await res.json()).detail || detail; } catch {}
+        throw new Error(detail);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        // SSE 以空行分隔事件
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const raw = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          for (const line of raw.split("\n")) {
+            if (!line.startsWith("data:")) continue;
+            const body = line.slice(5).trim();
+            if (!body) continue;
+            let ev;
+            try { ev = JSON.parse(body); } catch { continue; }
+            if (ev.type === "delta") onDelta(ev.text || "");
+            else if (ev.type === "error") throw new Error(ev.detail || "服务端错误");
+            else if (ev.type === "done") return;
+          }
+        }
       }
     }
 
@@ -328,7 +381,7 @@ createApp({
         <div v-if="!messages.length" class="hint">还没有消息，问点什么吧。</div>
         <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role === 'user' ? 'user' : 'ai'">
           <div class="who">{{ m.role === 'user' ? '你' : '助手' }}</div>
-          <div>{{ m.content }}</div>
+          <div>{{ m.content }}<span v-if="busy && i === messages.length - 1" class="caret"></span></div>
         </div>
       </div>
       <div class="row" style="margin-top:12px">
