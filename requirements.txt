@@ -16,6 +16,12 @@ langchain-text-splitters
 chromadb
 dashscope
 python-dotenv
+# 上传接口：FastAPI 的 UploadFile/Form 依赖它，缺失会在定义路由时直接报错
+python-multipart
+# 多格式文档解析（均为纯 Python 或预编译 wheel，不引入 torch/pandas）
+python-docx
+pypdf
+openpyxl
 # 注：原 requirements 里的 sentence-transformers 未被任何代码引用，
 # 但会拉入 torch（约 2–3GB），在磁盘紧张的服务器上会导致构建失败，故移除。
 # 若将来需要本地 embedding 模型，再按需加回。

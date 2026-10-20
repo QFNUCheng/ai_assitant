@@ -20,3 +20,6 @@ venv/
 
 # 向量库：由容器按语料指纹重建，不入库
 vectorstore/chroma_db/
+
+# 用户上传的知识库原件与登记表
+data/

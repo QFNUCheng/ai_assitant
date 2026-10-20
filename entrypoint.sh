@@ -31,7 +31,8 @@ asyncio.run(check())
     sleep 3
 done
 
-# 初始化/更新向量数据库（语料指纹变化时才重建，幂等）
+# 初始化/更新内置知识库（儒家经典）向量。
+# 只有内置集合 rujia 会在指纹变化时重建；用户上传的其它知识库不受影响。
 echo "📚 检查知识库向量..."
 python -m vectorstore.store --ensure
 

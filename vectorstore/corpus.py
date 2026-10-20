@@ -278,6 +278,13 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     ).split_text(text)
 
 
+def split_text(
+    text: str, chunk_size: int = CHUNK_MAX_CHARS, overlap: int = CHUNK_OVERLAP
+) -> list[str]:
+    """对外暴露的切分入口（``loaders`` 复用它，不必依赖私有名）。"""
+    return _split_text(text, chunk_size, overlap)
+
+
 def iter_chunks(sections: list[Section]) -> list[tuple[str, dict]]:
     """把节转成 (页面文本, 元数据)。
 

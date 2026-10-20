@@ -76,7 +76,7 @@ async def get_history_message(db: AsyncSession, session_id: int) -> list:
     for msg in recent_messages:
         history.append(_to_langchain_message(msg))
     return history
-async def save_message(db: AsyncSession, message: str, session_id: int):
+async def save_message(db: AsyncSession, message: str, session_id: int, kb_id: str | None = None):
     """保存消息并返回 AI 回复，同时触发摘要压缩"""
     # 1. 确保 session 存在
     session = await _get_or_create_session(db, session_id)
@@ -91,8 +91,8 @@ async def save_message(db: AsyncSession, message: str, session_id: int):
     # 3. 获取压缩后的历史（摘要 + 窗口消息）
     history = await get_history_message(db, session_id)
 
-    # 4. 调用 LangGraph 生成回复
-    new_message = await graph.ainvoke({"messages": history})
+    # 4. 调用 LangGraph 生成回复（kb_id 决定检索哪个知识库）
+    new_message = await graph.ainvoke({"messages": history, "kb_id": kb_id})
     result = new_message["messages"][-1].content
 
     # 5. 保存 AI 回复

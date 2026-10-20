@@ -27,6 +27,8 @@ services:
     volumes:
       # 向量库落盘到宿主机，容器重建后不必重新 embedding
       - ./data/vectorstore:/app/vectorstore/chroma_db
+      # 上传的原始文件与知识库登记表，容器重建后不丢
+      - ./data/knowledge:/app/data/knowledge
     extra_hosts:
       # 让容器内能用 DB_HOST=host.docker.internal 连宿主机上的宝塔 MySQL
       - "host.docker.internal:host-gateway"

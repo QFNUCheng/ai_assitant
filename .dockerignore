@@ -13,6 +13,9 @@ venv/
 # 向量库由容器启动时用 --ensure 按语料指纹重建，不打进镜像
 vectorstore/chroma_db/
 
+# 用户上传的知识库原件与登记表，绝不进镜像
+data/
+
 # 本地环境变量（密钥），绝不进镜像
 .env
 *.local

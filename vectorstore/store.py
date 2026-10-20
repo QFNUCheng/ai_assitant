@@ -107,8 +107,39 @@ def _read_build_meta() -> dict | None:
         return None
 
 
+def _delete_collection(name: str) -> None:
+    """删除单个 collection（不存在时静默跳过）。
+
+    这里**不能**整目录 rmtree：持久化目录里同时存着儒家经典和用户上传的各个知识库，
+    清整个目录会连带删掉上传库。只删指定集合，其余集合原地保留。
+
+    也**不能**调用 ``SharedSystemClient.clear_system_cache()``：现在有多个集合共存，
+    清全局缓存会让其它集合的句柄失效。该调用只留在 ``_wipe_persist_dir`` 里，
+    而后者仅供运维 ``--purge`` 使用。
+    """
+    if not PERSIST_DIR.exists():
+        return
+    Chroma = _chroma()
+    try:
+        embedding_function = get_embedding_model()
+    except RuntimeError:
+        # 删除集合不需要 embedding；缺 key 时也能完成清理
+        embedding_function = None
+    try:
+        db = Chroma(
+            collection_name=name,
+            embedding_function=embedding_function,
+            persist_directory=str(PERSIST_DIR),
+        )
+        db.delete_collection()
+    except Exception:
+        # 集合不存在（或 chroma 认为没有可删的）时无需处理
+        pass
+    gc.collect()
+
+
 def _wipe_persist_dir() -> None:
-    """清空向量库目录内容；清不掉就报错，绝不留下旧数据造成重复入库。
+    """清空整个向量库目录。**会删除所有知识库**，仅供运维 ``--purge`` 使用。
 
     注意**不能删除目录本身**：在容器里该目录通常是 bind mount，
     删除挂载点会得到 ``OSError: [Errno 16] Device or resource busy``。
@@ -201,13 +232,13 @@ def build_vector_db(books: list[str] | None = None) -> Chroma:
 
 
 def rebuild_vector_db(books: list[str] | None = None) -> Chroma:
-    """先清空持久化目录再重建。
+    """重建内置（儒家经典）向量库。
 
-    ``Chroma.from_documents``/``add_documents`` 写入已存在的目录是**追加**，
-    不先删除会产生重复条目，所以清空是功能性的，不是清理动作。
+    只删除 ``rujia`` 这一个 collection，**不影响用户上传的其它知识库**。
+    写入阶段 ``add_documents`` 对已存在的集合是追加，所以必须先删集合。
     """
     books = _resolve_books(books)
-    _wipe_persist_dir()
+    _delete_collection(COLLECTION_NAME)
     return build_vector_db(books)
 
 
@@ -227,15 +258,79 @@ def create_vector_db():
     return None
 
 
-def search_knowledge(question: str, k: int = RETRIEVAL_K) -> list:
-    """检索与问题最相关的经典原文。"""
+def _open_collection(name: str):
     Chroma = _chroma()
-    db = Chroma(
+    return Chroma(
         persist_directory=str(PERSIST_DIR),
-        collection_name=COLLECTION_NAME,
+        collection_name=name,
         embedding_function=get_embedding_model(),
     )
-    return db.similarity_search(question, k=k)
+
+
+def _clear_chroma_cache() -> None:
+    try:
+        from chromadb.api.shared_system_client import SharedSystemClient
+
+        SharedSystemClient.clear_system_cache()
+    except Exception:
+        pass
+    gc.collect()
+
+
+def _search_once(name: str, question: str, k: int) -> list:
+    return _open_collection(name).similarity_search(question, k=k)
+
+
+def _search_with_retry(name: str, question: str, k: int) -> list:
+    """检索一次；遇到 chromadb 的瞬时错误（如 HNSW 段未就绪）清缓存后重试一次。
+
+    生产环境长期运行时偶发 ``InternalError: Error creating hnsw segment reader:
+    Nothing found on disk``，重试即可恢复，不必让整个请求失败。
+    """
+    try:
+        return _search_once(name, question, k)
+    except Exception:
+        _clear_chroma_cache()
+        return _search_once(name, question, k)
+
+
+SEARCH_ALL = {"all", "*"}
+
+
+def search_knowledge(question: str, k: int = RETRIEVAL_K, kb_id: str | None = None) -> list:
+    """检索与问题最相关的原文。
+
+    ``kb_id`` 取值：
+
+    - ``None`` / ``"rujia"``：只查内置的儒家经典（默认，保持向后兼容）
+    - ``"all"`` / ``"*"``：查所有知识库，按距离合并后取前 k 条
+    - 其它：查对应的上传库（collection 名 ``kb_<id>``）
+    """
+    target = (kb_id or COLLECTION_NAME).strip()
+
+    if target in SEARCH_ALL:
+        from vectorstore import kb as kb_module
+
+        merged: list = []
+        for one in kb_module.available_kb_ids():
+            name = kb_module.collection_name(one)
+            try:
+                db = _open_collection(name)
+                if not db._collection.count():
+                    continue
+                hits = db.similarity_search_with_score(question, k=k)
+            except Exception:
+                _clear_chroma_cache()
+                try:
+                    hits = _open_collection(name).similarity_search_with_score(question, k=k)
+                except Exception:
+                    continue
+            merged.extend(hits)
+        merged.sort(key=lambda pair: pair[1])  # 距离升序，越小越相关
+        return [doc for doc, _ in merged[:k]]
+
+    name = target if target == COLLECTION_NAME else f"kb_{target}"
+    return _search_with_retry(name, question, k)
 
 
 def collection_stats() -> dict:
