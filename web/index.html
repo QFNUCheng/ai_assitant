@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>儒家经典知识库</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a;
+    --fg: #e8eaed; --muted: #9aa3b2; --accent: #6ea8fe; --ok: #7bd88f;
+    --danger: #ff7b72; --warn: #e3b341; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  button {
+    font: inherit; cursor: pointer; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel2); color: var(--fg); padding: 7px 14px; transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0b0d11; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  input, select, textarea {
+    font: inherit; background: var(--panel2); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  header {
+    padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .wrap { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .kb { padding: 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; margin-bottom: 8px; }
+  .kb:hover { border-color: var(--accent); }
+  .kb.active { border-color: var(--accent); background: rgba(110,168,254,.10); }
+  .kb .name { font-weight: 600; }
+  .kb .meta { color: var(--muted); font-size: 12px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.builtin { color: var(--ok); border-color: var(--ok); }
+  .msg { padding: 12px 14px; border-radius: var(--radius); margin-bottom: 12px; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { background: var(--panel2); margin-left: 12%; }
+  .msg.ai { background: var(--panel); border: 1px solid var(--line); margin-right: 12%; }
+  .msg .who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .log { max-height: 60vh; overflow-y: auto; padding-right: 4px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .err { color: var(--danger); font-size: 13px; }
+  .ok { color: var(--ok); font-size: 13px; }
+  .file { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+  .drop { border: 1px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); color: var(--accent); }
+  pre.raw { background: var(--panel2); padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="./vendor/vue.global.prod.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

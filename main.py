@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,3 +93,10 @@ async def chat(payload: ChatRequest, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail=f"知识库 {kb_id} 不存在")
 
     return await save_message(db, message, payload.session_id, kb_id=kb_id)
+
+
+# ============ 前端静态页（Vue 3，无构建步骤） ============
+# 挂在最后：上面的 API 路由优先匹配，其余路径交给静态文件。
+_WEB_DIR = Path(__file__).resolve().parent / "web"
+if _WEB_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")
